@@ -1,0 +1,259 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<title>Escape Road - City Chase</title>
+<style>
+*{box-sizing:border-box}
+body{margin:0;background:#10151d;color:white;font-family:Arial,sans-serif;overflow:hidden}
+canvas{display:block;width:100vw;height:100vh}
+#hud{position:absolute;top:15px;left:15px;right:15px;display:flex;justify-content:space-between;pointer-events:none}
+.panel{background:#111d;color:white;padding:12px 17px;border:1px solid #ffffff30;border-radius:12px;font-weight:bold}
+#menu{position:absolute;inset:0;background:#07101ddd;display:flex;align-items:center;justify-content:center;text-align:center}
+.box{background:#182536;padding:35px;border-radius:20px;width:min(90%,420px);border:1px solid #ffffff30;box-shadow:0 10px 50px #000}
+h1{font-size:38px;margin:0 0 8px;color:#ffca35}
+p{color:#cbd5e1;line-height:1.5}
+button{background:#ffca35;color:#151515;border:0;padding:14px 28px;font-weight:bold;font-size:17px;border-radius:10px;cursor:pointer;margin-top:12px}
+button:active{transform:scale(.96)}
+#controls{position:absolute;bottom:20px;left:20px;right:20px;display:flex;justify-content:space-between;pointer-events:none}
+.pad{display:flex;gap:12px}
+.pad button{pointer-events:auto;margin:0;background:#ffffff35;color:white;border:1px solid #ffffff50;width:65px;height:60px;padding:0;font-size:25px;touch-action:none}
+#nitro{background:#ffca35;color:#111;width:85px}
+#help{font-size:12px;color:#9ca3af}
+</style>
+</head>
+<body>
+<canvas id="game"></canvas>
+
+<div id="hud">
+ <div class="panel">🏆 Score: <span id="score">0</span></div>
+ <div class="panel">💰 <span id="coins">0</span></div>
+ <div class="panel">🚓 <span id="wanted">1</span></div>
+</div>
+
+<div id="menu">
+ <div class="box">
+  <h1>🚗 ESCAPE ROAD</h1>
+  <h2>CITY CHASE</h2>
+  <p>Escape the police, dodge traffic and collect coins. How long can you survive?</p>
+  <p id="help">WASD / ARROW KEYS to drive<br>SPACE to use nitro</p>
+  <button onclick="startGame()">START GAME</button>
+ </div>
+</div>
+
+<div id="controls">
+ <div class="pad">
+  <button id="left">◀</button>
+  <button id="right">▶</button>
+ </div>
+ <div class="pad">
+  <button id="nitro">⚡</button>
+ </div>
+</div>
+
+<script>
+const canvas=document.getElementById("game");
+const ctx=canvas.getContext("2d");
+
+let W,H;
+function resize(){
+ W=canvas.width=innerWidth*devicePixelRatio;
+ H=canvas.height=innerHeight*devicePixelRatio;
+ ctx.setTransform(devicePixelRatio,0,0,devicePixelRatio,0,0);
+ W=innerWidth;H=innerHeight;
+}
+addEventListener("resize",resize);resize();
+
+let running=false,score=0,coins=0,frame=0;
+let player,traffic,police,items,roadOffset=0;
+let keys={left:false,right:false,nitro:false};
+
+const roadWidth= Math.min(440,innerWidth*.85);
+const lanes=4;
+
+function reset(){
+ score=0;coins=0;frame=0;roadOffset=0;
+ player={x:W/2,y:H*.76,w:34,h:58,speed:5,nitro:100};
+ traffic=[];police=[];items=[];
+}
+
+function startGame(){
+ reset();
+ running=true;
+ document.getElementById("menu").style.display="none";
+}
+
+function gameOver(){
+ running=false;
+ document.getElementById("menu").style.display="flex";
+ document.querySelector("#menu h1").textContent="🚨 GAME OVER";
+ document.querySelector("#menu h2").textContent="Score: "+score;
+ document.querySelector("#menu p").textContent="You collected "+coins+" coins. Try again and escape for longer!";
+ document.querySelector("#menu button").textContent="PLAY AGAIN";
+}
+
+function rect(x,y,w,h,color,r=5){
+ ctx.fillStyle=color;
+ ctx.beginPath();
+ ctx.roundRect(x,y,w,h,r);
+ ctx.fill();
+}
+
+function drawCar(x,y,color,policeCar=false){
+ ctx.save();
+ ctx.translate(x,y);
+ // shadow
+ rect(-17+3,-26+4,34,58,"#0005",7);
+ rect(-17,-29,34,58,color,7);
+ rect(-12,-18,24,18,"#b8e5f5",4);
+ rect(-12,7,24,12,"#263c4d",3);
+ rect(-14,-25,7,5,"#fff7b0",2);
+ rect(7,-25,7,5,"#fff7b0",2);
+ rect(-14,22,7,5,"#ff2929",2);
+ rect(7,22,7,5,"#ff2929",2);
+ if(policeCar){
+  rect(-13,-7,26,6,"white",2);
+  rect(-11,-9,9,5,"#ff2525",1);
+  rect(2,-9,9,5,"#258bff",1);
+ }
+ ctx.restore();
+}
+
+function drawRoad(){
+ const rw=roadWidth,x=W/2-rw/2;
+ ctx.fillStyle="#397c43";
+ ctx.fillRect(0,0,W,H);
+ // buildings
+ for(let side of [-1,1]){
+  for(let i=0;i<9;i++){
+   let y=((i*125+roadOffset*.55)%(H+125))-125;
+   rect(side===-1?x-90-(i%2)*25:x+rw+15+(i%2)*25,y,65,90,
+   ["#777b87","#8d6f65","#536a7b","#797b65"][i%4],3);
+   for(let wx=0;wx<3;wx++)
+    for(let wy=0;wy<3;wy++)
+     rect((side===-1?x-80-(i%2)*25:x+rw+25+(i%2)*25)+wx*18,y+12+wy*23,9,12,"#f3d98a");
+  }
+ }
+ ctx.fillStyle="#333943";
+ ctx.fillRect(x,0,rw,H);
+ ctx.fillStyle="#e6e6e6";
+ ctx.fillRect(x,0,5,H);ctx.fillRect(x+rw-5,0,5,H);
+ // lane markers
+ ctx.setLineDash([35,35]);
+ ctx.lineDashOffset=-roadOffset;
+ ctx.strokeStyle="#e9e9a0";
+ ctx.lineWidth=3;
+ for(let i=1;i<lanes;i++){
+  let lx=x+rw*i/lanes;
+  ctx.beginPath();ctx.moveTo(lx,0);ctx.lineTo(lx,H);ctx.stroke();
+ }
+ ctx.setLineDash([]);
+}
+
+function spawnTraffic(){
+ const x=W/2-roadWidth/2+roadWidth*(.125+Math.random()*.75);
+ traffic.push({x,y:-80,w:34,h:58,speed:2+Math.random()*2,color:["#e64b40","#3295df","#e6bb36","#9c65d9"][Math.floor(Math.random()*4)]});
+}
+
+function spawnPolice(){
+ const x=player.x+(Math.random()-.5)*roadWidth*.7;
+ police.push({x:Math.max(W/2-roadWidth/2+25,Math.min(W/2+roadWidth/2-25,x)),y:-100,speed:2.5+Math.random()*1.5});
+}
+
+function update(){
+ if(!running)return;
+ frame++;
+ score++;
+ roadOffset+=player.speed;
+ let boost=keys.nitro&&player.nitro>0;
+ if(boost)player.nitro=Math.max(0,player.nitro-1);
+ else player.nitro=Math.min(100,player.nitro+.15);
+
+ let speed=boost?9:5;
+ player.speed=speed;
+ if(keys.left)player.x-=6;
+ if(keys.right)player.x+=6;
+ let edge=roadWidth/2-25;
+ player.x=Math.max(W/2-edge,Math.min(W/2+edge,player.x));
+
+ if(frame%48===0)spawnTraffic();
+ if(frame%210===0)spawnPolice();
+ if(frame%300===0)items.push({x:W/2+(Math.random()-.5)*roadWidth*.7,y:-30});
+
+ traffic.forEach(t=>t.y+=speed-t.speed);
+ police.forEach(p=>{
+  p.y+=speed-p.speed;
+  p.x+=(player.x-p.x)*.004;
+ });
+ items.forEach(i=>i.y+=speed);
+
+ traffic=traffic.filter(t=>t.y<H+100);
+ police=police.filter(p=>p.y<H+100);
+ items=items.filter(i=>i.y<H+50);
+
+ for(let t of traffic){
+  if(Math.abs(player.x-t.x)<29&&Math.abs(player.y-t.y)<48)gameOver();
+ }
+ for(let p of police){
+  if(Math.abs(player.x-p.x)<29&&Math.abs(player.y-p.y)<48)gameOver();
+ }
+ for(let i of items){
+  if(Math.abs(player.x-i.x)<28&&Math.abs(player.y-i.y)<35){
+   i.y=H+100;coins++;score+=100;
+  }
+ }
+ document.getElementById("score").textContent=score;
+ document.getElementById("coins").textContent=coins;
+ document.getElementById("wanted").textContent=Math.min(5,1+Math.floor(score/1500));
+}
+
+function draw(){
+ ctx.clearRect(0,0,W,H);
+ drawRoad();
+
+ // coins
+ items.forEach(i=>{
+  ctx.fillStyle="#ffdb27";
+  ctx.beginPath();ctx.arc(i.x,i.y,12,0,Math.PI*2);ctx.fill();
+  ctx.fillStyle="#a66b00";ctx.font="bold 15px Arial";ctx.fillText("$",i.x-5,i.y+5);
+ });
+
+ traffic.forEach(t=>drawCar(t.x,t.y,t.color));
+ police.forEach(p=>drawCar(p.x,p.y,"#e9e9ed",true));
+ drawCar(player.x,player.y,"#ffca35");
+
+ // Nitro bar
+ rect(15,H-110,105,12,"#222");
+ rect(15,H-110,105*player.nitro/100,12,"#ffca35");
+ ctx.fillStyle="white";ctx.font="12px Arial";
+ ctx.fillText("NITRO",15,H-116);
+}
+
+function loop(){
+ update();draw();requestAnimationFrame(loop);
+}
+loop();
+
+addEventListener("keydown",e=>{
+ if(["ArrowLeft","ArrowRight","ArrowUp","ArrowDown"," "].includes(e.key))e.preventDefault();
+ if(e.key==="ArrowLeft"||e.key==="a")keys.left=true;
+ if(e.key==="ArrowRight"||e.key==="d")keys.right=true;
+ if(e.code==="Space")keys.nitro=true;
+});
+addEventListener("keyup",e=>{
+ if(e.key==="ArrowLeft"||e.key==="a")keys.left=false;
+ if(e.key==="ArrowRight"||e.key==="d")keys.right=false;
+ if(e.code==="Space")keys.nitro=false;
+});
+
+function bind(id,key){
+ const el=document.getElementById(id);
+ el.addEventListener("pointerdown",e=>{e.preventDefault();keys[key]=true});
+ ["pointerup","pointerleave","pointercancel"].forEach(ev=>
+ el.addEventListener(ev,()=>keys[key]=false));
+}
+bind("left","left");bind("right","right");bind("nitro","nitro");
+</script>
+</body>
+</html>
